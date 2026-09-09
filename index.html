@@ -339,16 +339,21 @@
   <table class="grid" id="grid"></table>
 </main>
 
-<!-- config.js არ იდება git-ში: შეიცავს Bitrix24 webhook-ს. ნიმუში: config.example.js -->
-<script src="config.js"></script>
+<!-- config.js არ იდება git-ში: შეიცავს Bitrix24 webhook-ს (ლოკალური გახსნისთვის). ნიმუში: config.example.js.
+     ჰოსტინგზე ის არ არსებობს და გვერდი /api/bitrix proxy-ს იყენებს. -->
+<script src="config.js" onerror="void 0"></script>
 <script>
 /* =====================================================================
    კონფიგურაცია — webhook და ლისტის ID მოდის config.js-იდან (window.ARCHI_CONFIG);
    ველების ID-ები აქ შეცვალეთ, თუ ლისტის სტრუქტურა შეიცვლება
    ===================================================================== */
 const LOCAL = window.ARCHI_CONFIG || {};
+// ჰოსტინგზე (Vercel) config.js არ არის — მაშინ მოთხოვნები მიდის /api/bitrix proxy-ზე,
+// რომელიც webhook-ს სერვერის Environment Variable-იდან იღებს.
+const IS_HOSTED = /^https?:$/.test(location.protocol);
 const CONFIG = {
   webhook: LOCAL.webhook || '',
+  proxy: LOCAL.webhook ? '' : (IS_HOSTED ? (LOCAL.proxy || '/api/bitrix') : ''),
   iblockType: LOCAL.iblockType || 'lists',
   iblockId: LOCAL.iblockId || 82,
   props: {
@@ -377,8 +382,11 @@ const $ = (sel) => document.querySelector(sel);
 /* ===================== REST ===================== */
 async function callRest(method, params = {}) {
   let res;
+  const url = CONFIG.proxy
+    ? `${CONFIG.proxy}?method=${encodeURIComponent(method)}`
+    : CONFIG.webhook + method + '.json';
   try {
-    res = await fetch(CONFIG.webhook + method + '.json', {
+    res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(params),
@@ -386,8 +394,13 @@ async function callRest(method, params = {}) {
   } catch (e) {
     throw new Error(`ქსელის შეცდომა (${method}): ${e.message}`);
   }
-  if (!res.ok) throw new Error(`HTTP ${res.status} (${method})`);
-  const json = await res.json();
+  let json = null;
+  try { json = await res.json(); } catch { json = null; }
+  if (json && json.error === 'server_config') {
+    throw new Error('სერვერზე BITRIX_WEBHOOK ცვლადი არ არის დაყენებული. Vercel → Settings → Environment Variables → BITRIX_WEBHOOK, შემდეგ Redeploy.');
+  }
+  if (!res.ok && !(json && json.error)) throw new Error(`HTTP ${res.status} (${method})`);
+  if (!json) throw new Error(`არასწორი პასუხი სერვერიდან (${method})`);
   if (json.error) throw new Error(`${json.error}: ${json.error_description || ''} (${method})`);
   return json;
 }
@@ -755,6 +768,7 @@ function createMultiSelect({ mount, label, allLabel, getItems, selected, onChang
   document.addEventListener('click', (e) => { if (!root.contains(e.target)) close(); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
 
+  refreshLabel();
   return { refresh: refreshLabel, close };
 }
 
@@ -806,7 +820,7 @@ async function loadData() {
   $('#legend').hidden = true;
   $('#btnRefresh').disabled = true;
   try {
-    if (!CONFIG.webhook) {
+    if (!CONFIG.webhook && !CONFIG.proxy) {
       throw new Error('config.js არ მოიძებნა ან webhook ცარიელია. დააკოპირეთ config.example.js → config.js და ჩაწერეთ Bitrix24 webhook URL.');
     }
     const [elements, fields] = await Promise.all([fetchAllElements(), fetchFields()]);

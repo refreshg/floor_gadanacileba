@@ -46,6 +46,20 @@ Bitrix24-ის (crm.archi.ge) **82 ლისტიდან** («მენე�
 
 თუ `PROPERTY_1033` ცარიელია, სართულები ითვლება «-დან/-მდე» დიაპაზონით, ლუწი/კენტი ფილტრის გათვალისწინებით.
 
+## Vercel-ზე გამოქვეყნება
+
+ჰოსტინგზე `config.js` არ არის (git-ში არ იდება), ამიტომ გვერდი მოთხოვნებს აგზავნის `/api/bitrix`-ზე —
+serverless proxy ([api/bitrix.js](api/bitrix.js)), რომელიც webhook-ს სერვერის ცვლადიდან იღებს. Webhook ბრაუზერში არ ჩანს.
+
+1. Vercel → პროექტი → **Settings → Environment Variables**:
+   - `BITRIX_WEBHOOK` = `https://crm.archi.ge/rest/USER_ID/WEBHOOK_CODE/` (Production + Preview)
+   - სურვილისამებრ `BITRIX_IBLOCK_ID` (default `82`)
+2. **Deployments → Redeploy** (ცვლადები მხოლოდ ახალ deploy-ზე მოქმედებს).
+
+Proxy უშვებს მხოლოდ `lists.element.get`, `lists.field.get`, `user.get` მეთოდებს და მხოლოდ კონფიგურირებულ ლისტზე.
+გაითვალისწინეთ: თავად გვერდი ღიაა ყველასთვის, ვისაც Vercel-ის ბმული აქვს. თუ შეზღუდვა გჭირდებათ,
+გამოიყენეთ Vercel-ის Deployment Protection ან დაამატეთ ავტორიზაცია.
+
 ## კონფიგურაცია
 
 - `config.js` — webhook URL, `iblockId`, `iblockType` (ლოკალური, git-ში არ იდება).
@@ -57,5 +71,5 @@ Webhook-ის token `config.js`-ში ინახება. ვისაც �
 რომელმაც webhook შექმნა. `config.js` მხოლოდ შიდა გამოყენებისთვისაა: არ დადოთ საჯარო სერვერზე/რეპოზიტორიაში,
 არ გაუგზავნოთ გარე პირებს. თუ token გავრცელდა, Bitrix24-ში webhook გააუქმეთ და ახალი შექმენით.
 
-რეპოზიტორია საჯაროა, ამიტომ `config.js` `.gitignore`-შია. GitHub Pages-ზე გამოქვეყნებისას გვერდი
-`config.js`-ის გარეშე შეცდომას აჩვენებს — ეს განზრახ ასეა.
+რეპოზიტორია საჯაროა, ამიტომ `config.js` `.gitignore`-შია. ჰოსტინგზე webhook მხოლოდ სერვერის
+Environment Variable-ში უნდა იყოს (იხ. Vercel სექცია).
