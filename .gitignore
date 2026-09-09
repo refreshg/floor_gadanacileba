@@ -1,6 +1,9 @@
 # Bitrix24 webhook — არასდროს დაიდოს რეპოზიტორიაში
 config.js
 
+# doc backups made by /docs-init
+*.bak
+
 # OS / editor / tooling
 Thumbs.db
 .DS_Store

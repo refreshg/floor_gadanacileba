@@ -65,6 +65,40 @@ Proxy უშვებს მხოლოდ `lists.element.get`, `lists.field.ge
 - `config.js` — webhook URL, `iblockId`, `iblockType` (ლოკალური, git-ში არ იდება).
 - `index.html`, `CONFIG.props` — ველების (property) ID-ები. სხვა ლისტზე გადასაყვანად მხოლოდ ეს შეცვალეთ.
 
+## დამოკიდებულებები
+
+| რა | საიდან | ვერსია |
+|---|---|---|
+| SheetJS (`xlsx`) — Excel export | cdnjs | 0.18.5 |
+| Noto Sans Georgian | Google Fonts | — |
+| Node runtime (მხოლოდ Vercel proxy) | Vercel | პლატფორმის default, `fetch` ჩაშენებული |
+| Bitrix24 REST | crm.archi.ge webhook | scopes `lists`, `user` |
+
+npm პაკეტები არ არის; `package.json` დაემატება ტესტებისთვის (იხ. docs/PLAN.md M3).
+
+## ინსტალაცია / განახლება
+
+- **ლოკალურად**: `git clone`, `config.example.js` → `config.js`, გახსენით `index.html`. განახლება = `git pull`.
+- **Vercel**: push `main`-ზე → ავტომატური deploy. პირველ ჯერზე `BITRIX_WEBHOOK` ცვლადი (იხ. ზემოთ). Bitrix-ის მხარეს ინსტალაცია არ სჭირდება, არაფერი იწერება.
+- ლისტის ველების ID-ების ცვლილებაზე: `index.html` → `CONFIG.props`.
+
+## ცნობილი შეზღუდვები
+
+- გვერდი ბმულით ღიაა, ავტორიზაცია არ არის (გადაწყვეტილება D-5).
+- «ყველა სართული» = კი ჩანაწერებზე ნაჩვენებია მხოლოდ `floors(sorted)`-ში არსებული სართულები; პროექტის სართულების საერთო რაოდენობა ლისტში არ არის.
+- `QUERY_LIMIT_EXCEEDED`-ზე ავტომატური retry არ არის, მხოლოდ «ხელახლა ცდა» ღილაკი.
+- მობილურზე ცხრილი ჰორიზონტალურად სქროლდება, ცალკე მობილური განლაგება არ არის.
+- ავტომატური ტესტები ჯერ არ არის (docs/PLAN.md M3).
+
+## დოკუმენტაცია
+
+- [docs/PRD.md](docs/PRD.md) — პრობლემა, მომხმარებლები, მიღების კრიტერიუმები
+- [docs/SPEC.md](docs/SPEC.md) — ტექნიკური სპეციფიკაცია
+- [docs/PLAN.md](docs/PLAN.md) — გეგმა და სტატუსი
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — კომპონენტები და მონაცემთა ნაკადი
+- [docs/DECISIONS.md](docs/DECISIONS.md) — გადაწყვეტილებები (ADR)
+- [CLAUDE.md](CLAUDE.md) — წესები Claude Code-სთვის
+
 ## ⚠ უსაფრთხოება
 
 Webhook-ის token `config.js`-ში ინახება. ვისაც ეს ფაილი აქვს, CRM-ში წვდომა აქვს იმ მომხმარებლის უფლებებით,
