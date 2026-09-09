@@ -1,0 +1,896 @@
+<!DOCTYPE html>
+<html lang="ka">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>სართულების განაწილება — მენეჯერები</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Georgian:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root {
+    --bg: #f3f5f9;
+    --surface: #ffffff;
+    --text: #1a2233;
+    --muted: #64708a;
+    --line: #e1e6ef;
+    --accent: #2d6cdf;
+    --accent-dark: #1f3b6e;
+    --accent-soft: #e6effc;
+    --cell-bg: #cfe0fa;
+    --cell-bg-hover: #bcd3f7;
+    --cell-text: #12345f;
+    --cell-hit: #2d6cdf;
+    --zebra: #f6f8fb;
+    --conflict: #e0563a;
+    --conflict-soft: #fdece8;
+    --ok: #2e9e6b;
+    --radius: 10px;
+    --shadow: 0 1px 2px rgba(20, 30, 60, .06), 0 6px 20px rgba(20, 30, 60, .06);
+    --font: "Noto Sans Georgian", "Segoe UI", system-ui, -apple-system, Arial, sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    font-family: var(--font);
+    font-size: 14px;
+    color: var(--text);
+    background: var(--bg);
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+  }
+  button, input { font-family: inherit; font-size: inherit; color: inherit; }
+  [hidden] { display: none !important; }
+
+  /* ---------- Top bar ---------- */
+  .topbar {
+    position: sticky; top: 0; z-index: 50;
+    background: var(--surface);
+    border-bottom: 1px solid var(--line);
+    box-shadow: 0 1px 0 rgba(20,30,60,.03);
+  }
+  .topbar-inner {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px;
+    padding: 12px 20px;
+  }
+  .brand { display: flex; flex-direction: column; gap: 2px; margin-right: auto; min-width: 240px; }
+  .brand h1 { margin: 0; font-size: 18px; font-weight: 700; letter-spacing: -.01em; }
+  .brand .meta { color: var(--muted); font-size: 12.5px; }
+  .brand .meta b { color: var(--text); font-weight: 600; }
+
+  .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+
+  .btn {
+    display: inline-flex; align-items: center; gap: 7px;
+    height: 36px; padding: 0 13px;
+    border: 1px solid var(--line); border-radius: 8px;
+    background: var(--surface); cursor: pointer;
+    font-weight: 500; line-height: 1;
+    transition: background .12s, border-color .12s, box-shadow .12s;
+    white-space: nowrap;
+  }
+  .btn:hover { background: #f7f9fc; border-color: #cbd3e1; }
+  .btn:active { background: #eef2f8; }
+  .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .btn svg { width: 15px; height: 15px; flex: none; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn.primary:hover { background: #245cc0; border-color: #245cc0; }
+  .btn.success { background: #1f7a4d; border-color: #1f7a4d; color: #fff; }
+  .btn.success:hover { background: #1a6841; border-color: #1a6841; }
+  .btn.ghost { border-color: transparent; color: var(--muted); }
+  .btn.ghost:hover { color: var(--text); background: #f1f4f9; }
+  .btn .count {
+    background: var(--accent); color: #fff; border-radius: 999px;
+    font-size: 11.5px; font-weight: 600; padding: 2px 7px; line-height: 1.2;
+  }
+  .btn.active-filter { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-dark); }
+  .btn .chev { width: 12px; height: 12px; opacity: .6; }
+
+  .floor-field {
+    display: inline-flex; align-items: center; gap: 6px;
+    height: 36px; padding: 0 6px 0 12px;
+    border: 1px solid var(--line); border-radius: 8px; background: var(--surface);
+  }
+  .floor-field:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(45,108,223,.15); }
+  .floor-field label { color: var(--muted); font-size: 13px; }
+  .floor-field input {
+    width: 64px; height: 30px; border: 0; outline: 0; background: transparent;
+    font-weight: 600; text-align: center;
+  }
+  .floor-field input::-webkit-outer-spin-button,
+  .floor-field input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  .floor-field input[type=number] { -moz-appearance: textfield; }
+  .floor-field .x {
+    width: 24px; height: 24px; border: 0; border-radius: 6px; background: transparent;
+    color: var(--muted); cursor: pointer; display: grid; place-items: center;
+  }
+  .floor-field .x:hover { background: #eef2f8; color: var(--text); }
+
+  /* ---------- Multi-select dropdown ---------- */
+  .ms { position: relative; }
+  .ms-panel {
+    position: absolute; top: calc(100% + 6px); left: 0; z-index: 60;
+    width: 320px; max-height: 420px;
+    background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  .ms-panel.right { left: auto; right: 0; }
+  .ms-head { display: flex; gap: 6px; padding: 10px; border-bottom: 1px solid var(--line); }
+  .ms-head input {
+    flex: 1; height: 32px; padding: 0 10px;
+    border: 1px solid var(--line); border-radius: 7px; outline: 0; background: #fbfcfe;
+  }
+  .ms-head input:focus { border-color: var(--accent); }
+  .ms-actions { display: flex; gap: 6px; padding: 8px 10px; border-bottom: 1px solid var(--line); background: #fafbfd; }
+  .ms-actions .btn { height: 28px; padding: 0 10px; font-size: 12.5px; }
+  .ms-list { overflow: auto; padding: 6px; }
+  .ms-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 7px 8px; border-radius: 7px; cursor: pointer; user-select: none;
+  }
+  .ms-item:hover { background: #f1f4f9; }
+  .ms-item input { width: 16px; height: 16px; accent-color: var(--accent); margin: 0; cursor: pointer; }
+  .ms-item .sub { margin-left: auto; color: var(--muted); font-size: 12px; }
+  .ms-empty { padding: 14px; color: var(--muted); text-align: center; font-size: 13px; }
+
+  /* ---------- Info line / status ---------- */
+  .answer {
+    margin: 12px 20px 0;
+    padding: 10px 14px;
+    background: var(--accent-soft); border: 1px solid #c9dbf7; border-radius: var(--radius);
+    color: var(--accent-dark); font-size: 13.5px;
+    display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: center;
+  }
+  .answer b { font-weight: 700; }
+  .answer .pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: #fff; border: 1px solid #c9dbf7; border-radius: 999px; padding: 3px 10px;
+  }
+  .answer .pill .who { font-weight: 600; }
+  .answer .none { color: var(--conflict); font-weight: 600; }
+
+  .status {
+    margin: 12px 20px 0;
+    padding: 12px 14px; border-radius: var(--radius);
+    display: flex; align-items: center; gap: 12px;
+  }
+  .status.error { background: var(--conflict-soft); border: 1px solid #f4c1b5; color: #8a2b17; }
+  .status.error code { font-family: Consolas, monospace; font-size: 12.5px; word-break: break-all; }
+  .status.loading { background: var(--surface); border: 1px solid var(--line); color: var(--muted); }
+  .spinner {
+    width: 18px; height: 18px; border-radius: 50%; flex: none;
+    border: 2.5px solid #d8e0ee; border-top-color: var(--accent);
+    animation: spin .8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .legend {
+    display: flex; flex-wrap: wrap; gap: 14px; align-items: center;
+    margin: 10px 20px 0; color: var(--muted); font-size: 12.5px;
+  }
+  .legend .sw { display: inline-block; width: 14px; height: 14px; border-radius: 4px; vertical-align: -2px; margin-right: 6px; }
+  .legend .sw.fill { background: var(--cell-bg); }
+  .legend .sw.conf { background: var(--cell-bg); box-shadow: inset 0 0 0 2px var(--conflict); }
+  .legend .sw.hit { background: var(--cell-hit); }
+
+  /* ---------- Table ---------- */
+  .table-wrap {
+    margin: 12px 20px 20px;
+    background: var(--surface);
+    border: 1px solid var(--line); border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    overflow: auto;
+    max-height: calc(100vh - 150px);
+    flex: 1;
+  }
+  table.grid {
+    border-collapse: separate; border-spacing: 0;
+    min-width: 100%;
+    table-layout: fixed;
+  }
+  .grid th, .grid td {
+    border-right: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+    padding: 0;
+  }
+  .grid th:last-child, .grid td:last-child { border-right: 0; }
+
+  /* header */
+  .grid thead th {
+    position: sticky; top: 0; z-index: 20;
+    background: var(--accent-dark); color: #fff;
+    font-weight: 500; text-align: center; vertical-align: top;
+    width: 150px; min-width: 150px;
+    padding: 10px 8px 9px;
+  }
+  .grid thead th.corner {
+    left: 0; z-index: 30;
+    width: 220px; min-width: 220px;
+    text-align: left;
+    background: #182f58;
+  }
+  .grid thead th.corner .lbl { display: block; font-size: 13.5px; font-weight: 600; }
+  .grid thead th.corner .sub { display: block; font-size: 12px; opacity: .7; margin-top: 3px; }
+  .mgr { display: flex; flex-direction: column; gap: 3px; align-items: center; }
+  .mgr .name { font-weight: 700; font-size: 13.5px; line-height: 1.25; }
+  .mgr .email { font-size: 11px; opacity: .8; word-break: break-all; line-height: 1.3; }
+  .mgr .phone { font-size: 12px; opacity: .9; font-variant-numeric: tabular-nums; min-height: 15px; }
+  .mgr .inner {
+    margin-top: 2px; font-size: 11.5px; font-weight: 600;
+    background: rgba(255,255,255,.14); border-radius: 999px; padding: 1px 8px;
+  }
+  .mgr .inner.none { opacity: .45; font-weight: 400; }
+  .grid thead th.col-hover { background: #26497f; }
+
+  /* body */
+  .grid tbody td { height: 44px; vertical-align: middle; background: var(--surface); }
+  .grid tbody tr:nth-child(even) td { background: var(--zebra); }
+  .grid tbody td.proj {
+    position: sticky; left: 0; z-index: 10;
+    text-align: left; padding: 6px 12px;
+    font-weight: 600; font-size: 13px;
+    background: #fbfcfe;
+    box-shadow: 1px 0 0 var(--line);
+  }
+  .grid tbody tr:nth-child(even) td.proj { background: #f2f5fa; }
+  .grid tbody td.proj .dot {
+    display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+    background: var(--conflict); margin-left: 7px; vertical-align: 2px;
+  }
+  .grid tbody tr:hover td { background: #eef3fb; }
+  .grid tbody tr:hover td.proj { background: #e6edf9; }
+  .grid tbody td.col-hover { background: #eef3fb; }
+
+  .cell {
+    margin: 4px 5px;
+    min-height: 36px;
+    border-radius: 7px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 1px; padding: 4px 8px;
+    position: relative;
+  }
+  .cell.filled { background: var(--cell-bg); color: var(--cell-text); cursor: default; }
+  .cell.filled .rng { font-weight: 600; font-size: 13px; letter-spacing: .01em; font-variant-numeric: tabular-nums; text-align: center; line-height: 1.25; }
+  .cell.filled .cnt { font-size: 10.5px; opacity: .7; font-weight: 500; }
+  .grid tbody tr:hover .cell.filled { background: var(--cell-bg-hover); }
+  .cell.conflict { box-shadow: inset 0 0 0 2px var(--conflict); }
+  .cell.conflict .warn {
+    position: absolute; top: -6px; right: -5px;
+    width: 17px; height: 17px; border-radius: 50%;
+    background: var(--conflict); color: #fff;
+    font-size: 11px; font-weight: 800; line-height: 17px; text-align: center;
+    box-shadow: 0 0 0 2px var(--surface);
+  }
+  .cell.hit { background: var(--cell-hit) !important; color: #fff; }
+  .cell.hit .cnt { opacity: .85; }
+  .grid.searching .cell.filled:not(.hit) { opacity: .28; }
+  .grid.searching tbody td.proj.nohit { opacity: .45; }
+
+  /* footer totals */
+  .grid tfoot th {
+    position: sticky; bottom: 0; z-index: 20;
+    background: #f1f4f9; color: var(--text);
+    font-weight: 600; text-align: center; padding: 8px 6px;
+    border-top: 2px solid #d5dce8; font-size: 13px;
+    font-variant-numeric: tabular-nums;
+  }
+  .grid tfoot th.corner { left: 0; z-index: 30; text-align: left; padding-left: 12px; background: #eaeef5; }
+  .grid tfoot th .sm { display: block; font-size: 11px; color: var(--muted); font-weight: 500; }
+
+  .empty-state { padding: 40px; text-align: center; color: var(--muted); }
+
+  /* ---------- Print ---------- */
+  @media print {
+    .topbar, .legend, .answer, .status { display: none !important; }
+    body { background: #fff; }
+    .table-wrap { margin: 0; border: 0; box-shadow: none; max-height: none; overflow: visible; }
+    .grid thead th, .grid tbody td.proj, .grid tfoot th { position: static; }
+    .grid thead th { background: #1f3b6e !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .cell.filled { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <div class="brand">
+      <h1>სართულების განაწილება მენეჯერებზე</h1>
+      <span class="meta" id="meta">იტვირთება…</span>
+    </div>
+    <div class="controls">
+      <div class="ms" id="msProjects"></div>
+      <div class="ms" id="msManagers"></div>
+      <div class="floor-field" title="მონიშნავს იმ უჯრებს, სადაც ეს სართული შედის">
+        <label for="floorInput">სართული</label>
+        <input id="floorInput" type="number" min="-5" max="200" placeholder="№" inputmode="numeric">
+        <button class="x" id="floorClear" type="button" aria-label="გასუფთავება" hidden>✕</button>
+      </div>
+      <button class="btn ghost" id="btnClear" type="button" title="ყველა ფილტრის გასუფთავება">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>
+        გასუფთავება
+      </button>
+      <button class="btn success" id="btnExcel" type="button" disabled>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/><path d="M9 13l6 6M15 13l-6 6"/></svg>
+        Excel export
+      </button>
+      <button class="btn" id="btnRefresh" type="button" title="მონაცემების ხელახლა წამოღება">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+        განახლება
+      </button>
+    </div>
+  </div>
+</header>
+
+<div id="status" class="status loading"><div class="spinner"></div><span>მონაცემები იტვირთება Bitrix24-იდან…</span></div>
+<div id="answer" class="answer" hidden></div>
+<div class="legend" id="legend" hidden>
+  <span><i class="sw fill"></i>პასუხისმგებელი სართულები</span>
+  <span><i class="sw conf"></i>კონფლიქტი — ერთ სართულზე ორი მენეჯერი</span>
+  <span><i class="sw hit"></i>ძებნის შედეგი</span>
+</div>
+
+<main class="table-wrap" id="tableWrap">
+  <table class="grid" id="grid"></table>
+</main>
+
+<!-- config.js არ იდება git-ში: შეიცავს Bitrix24 webhook-ს. ნიმუში: config.example.js -->
+<script src="config.js"></script>
+<script>
+/* =====================================================================
+   კონფიგურაცია — webhook და ლისტის ID მოდის config.js-იდან (window.ARCHI_CONFIG);
+   ველების ID-ები აქ შეცვალეთ, თუ ლისტის სტრუქტურა შეიცვლება
+   ===================================================================== */
+const LOCAL = window.ARCHI_CONFIG || {};
+const CONFIG = {
+  webhook: LOCAL.webhook || '',
+  iblockType: LOCAL.iblockType || 'lists',
+  iblockId: LOCAL.iblockId || 82,
+  props: {
+    project:     'PROPERTY_430',   // პროექტი (ბმული ლისტზე 111)
+    from:        'PROPERTY_431',   // სართული-დან
+    to:          'PROPERTY_432',   // სართული-მდე
+    all:         'PROPERTY_986',   // ყველა სართული (კი/არა)
+    oddEven:     'PROPERTY_433',   // ლუწი / კენტი
+    manager:     'PROPERTY_434',   // პასუხისმგებელი (employee)
+    floors:      'PROPERTY_1033',  // floors(sorted) — მზა სართულების სია
+    projectName: 'PROPERTY_1357',  // პროექტის სახელი ტექსტად (fallback)
+  },
+  // ლისტის მნიშვნელობების ID-ები (lists.field.get-იდან); fallback-ისთვის თუ DISPLAY_VALUES ვერ მოვიდა
+  enumFallback: { allYes: '1321', even: '812', odd: '813' },
+};
+
+/* ===================== მდგომარეობა ===================== */
+const state = {
+  model: null,
+  filters: { projects: new Set(), managers: new Set(), floor: null },
+  loadedAt: null,
+};
+const P = CONFIG.props;
+const $ = (sel) => document.querySelector(sel);
+
+/* ===================== REST ===================== */
+async function callRest(method, params = {}) {
+  let res;
+  try {
+    res = await fetch(CONFIG.webhook + method + '.json', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params),
+    });
+  } catch (e) {
+    throw new Error(`ქსელის შეცდომა (${method}): ${e.message}`);
+  }
+  if (!res.ok) throw new Error(`HTTP ${res.status} (${method})`);
+  const json = await res.json();
+  if (json.error) throw new Error(`${json.error}: ${json.error_description || ''} (${method})`);
+  return json;
+}
+
+async function fetchAllElements() {
+  const base = { IBLOCK_TYPE_ID: CONFIG.iblockType, IBLOCK_ID: CONFIG.iblockId, ELEMENT_ORDER: { ID: 'ASC' } };
+  const out = [];
+  let start = 0;
+  for (let guard = 0; guard < 500; guard++) {
+    const json = await callRest('lists.element.get', { ...base, start });
+    out.push(...(json.result || []));
+    if (json.next === undefined || json.next === null) break;
+    start = Number(json.next);
+  }
+  return out;
+}
+
+async function fetchFields() {
+  const json = await callRest('lists.field.get', { IBLOCK_TYPE_ID: CONFIG.iblockType, IBLOCK_ID: CONFIG.iblockId });
+  return json.result || {};
+}
+
+async function fetchUsers(ids) {
+  const out = [];
+  for (let i = 0; i < ids.length; i += 50) {
+    const chunk = ids.slice(i, i + 50);
+    let start = 0;
+    for (let guard = 0; guard < 20; guard++) {
+      const json = await callRest('user.get', { ID: chunk, start });
+      out.push(...(json.result || []));
+      if (json.next === undefined || json.next === null) break;
+      start = Number(json.next);
+    }
+  }
+  return out;
+}
+
+/* ===================== დამხმარეები ===================== */
+function propValues(el, key) {
+  const v = el[key];
+  if (v === undefined || v === null || v === '' || v === false) return [];
+  if (Array.isArray(v)) return v;
+  if (typeof v === 'object') return Object.values(v);
+  return [v];
+}
+function propFirst(el, key) {
+  const a = propValues(el, key);
+  return a.length ? a[0] : null;
+}
+function cleanName(s) { return String(s || '').replace(/\s+/g, ' ').trim(); }
+function displayPhone(u) {
+  const raw = u.WORK_PHONE || u.PERSONAL_MOBILE || u.PERSONAL_PHONE || '';
+  return String(raw).replace(/[^\d+]/g, '').replace(/^\+?995/, '');
+}
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+const collator = new Intl.Collator('ka', { numeric: true, sensitivity: 'base' });
+
+/** [1,2,3,4,5,21,22,23,24,25,26] -> "1 - 5, 21 - 26" */
+function formatRanges(floors) {
+  const a = [...new Set(floors)].sort((x, y) => x - y);
+  const parts = [];
+  for (let i = 0; i < a.length;) {
+    let j = i;
+    while (j + 1 < a.length && a[j + 1] === a[j] + 1) j++;
+    parts.push(j === i ? `${a[i]}` : `${a[i]} - ${a[j]}`);
+    i = j + 1;
+  }
+  return parts.join(', ');
+}
+
+function floorsFromRange(el, enums) {
+  const from = Number(propFirst(el, P.from));
+  const to = Number(propFirst(el, P.to));
+  if (!Number.isFinite(from) || !Number.isFinite(to)) return [];
+  const lo = Math.min(from, to), hi = Math.max(from, to);
+  if (hi - lo > 500) return [];
+  const oe = String(propFirst(el, P.oddEven) || '');
+  const out = [];
+  for (let f = lo; f <= hi; f++) {
+    if (oe === enums.even && f % 2 !== 0) continue;
+    if (oe === enums.odd && f % 2 === 0) continue;
+    out.push(f);
+  }
+  return out;
+}
+
+/** lists.field.get-იდან ლუწი/კენტი და «ყველა სართული» მნიშვნელობების ID-ები */
+function resolveEnums(fields) {
+  const r = { ...CONFIG.enumFallback };
+  const oe = fields[P.oddEven] && fields[P.oddEven].DISPLAY_VALUES_FORM;
+  if (oe) for (const [id, label] of Object.entries(oe)) {
+    if (/ლუწ/.test(label)) r.even = id;
+    if (/კენტ/.test(label)) r.odd = id;
+  }
+  const all = fields[P.all] && fields[P.all].DISPLAY_VALUES_FORM;
+  if (all) for (const [id, label] of Object.entries(all)) {
+    if (/^კი$/.test(label.trim())) r.allYes = id;
+  }
+  return r;
+}
+
+/* ===================== მოდელი ===================== */
+function buildModel(elements, fields, users) {
+  const enums = resolveEnums(fields);
+  const projectNames = (fields[P.project] && fields[P.project].DISPLAY_VALUES_FORM) || {};
+  const userById = new Map(users.map((u) => [String(u.ID), u]));
+
+  const projects = new Map();   // id -> {id, name}
+  const managers = new Map();   // id -> {id, name, email, phone, inner, active}
+  const cells = new Map();      // projectId -> Map(managerId -> Set<floor>)
+  const owners = new Map();     // projectId -> Map(floor -> Set<managerId>)
+  let used = 0;
+
+  for (const el of elements) {
+    const projectId = String(propFirst(el, P.project) || '');
+    const managerId = String(propFirst(el, P.manager) || '');
+    if (!projectId || !managerId) continue;
+
+    let floors = propValues(el, P.floors).map(Number).filter(Number.isFinite);
+    if (!floors.length) floors = floorsFromRange(el, enums);
+    if (!floors.length) continue;
+    used++;
+
+    if (!projects.has(projectId)) {
+      const name = projectNames[projectId] || propFirst(el, P.projectName) || `პროექტი #${projectId}`;
+      projects.set(projectId, { id: projectId, name: cleanName(name), hasConflict: false });
+    }
+    if (!managers.has(managerId)) {
+      const u = userById.get(managerId);
+      managers.set(managerId, u ? {
+        id: managerId,
+        name: cleanName(`${u.NAME || ''} ${u.LAST_NAME || ''}`) || `მომხმარებელი #${managerId}`,
+        email: u.EMAIL || '',
+        phone: displayPhone(u),
+        inner: u.UF_PHONE_INNER || '',
+        active: u.ACTIVE !== false && u.ACTIVE !== 'N',
+      } : { id: managerId, name: `მომხმარებელი #${managerId}`, email: '', phone: '', inner: '', active: false });
+    }
+
+    if (!cells.has(projectId)) cells.set(projectId, new Map());
+    const row = cells.get(projectId);
+    if (!row.has(managerId)) row.set(managerId, new Set());
+    const set = row.get(managerId);
+
+    if (!owners.has(projectId)) owners.set(projectId, new Map());
+    const own = owners.get(projectId);
+
+    for (const f of floors) {
+      set.add(f);
+      if (!own.has(f)) own.set(f, new Set());
+      own.get(f).add(managerId);
+    }
+  }
+
+  for (const [pid, own] of owners) {
+    for (const set of own.values()) if (set.size > 1) { projects.get(pid).hasConflict = true; break; }
+  }
+
+  return {
+    projects: [...projects.values()].sort((a, b) => collator.compare(a.name, b.name)),
+    managers: [...managers.values()].sort((a, b) => collator.compare(a.name, b.name)),
+    cells, owners,
+    counts: { elements: elements.length, used },
+  };
+}
+
+/* ===================== ხედი ===================== */
+function currentView() {
+  const m = state.model;
+  const F = state.filters;
+  const visProjects = m.projects.filter((p) => !F.projects.size || F.projects.has(p.id));
+  const visManagers = m.managers.filter((x) => !F.managers.size || F.managers.has(x.id));
+  return { visProjects, visManagers };
+}
+
+function cellData(pid, mid) {
+  const row = state.model.cells.get(pid);
+  const set = row && row.get(mid);
+  if (!set || !set.size) return null;
+  const floors = [...set].sort((a, b) => a - b);
+  const own = state.model.owners.get(pid);
+  const conflicts = [];
+  for (const f of floors) {
+    const o = own.get(f);
+    if (o && o.size > 1) conflicts.push({ floor: f, others: [...o].filter((x) => x !== mid) });
+  }
+  return { floors, text: formatRanges(floors), count: floors.length, conflicts };
+}
+
+function render() {
+  const grid = $('#grid');
+  if (!state.model) { grid.innerHTML = ''; return; }
+  const { visProjects, visManagers } = currentView();
+  const F = state.filters;
+  const mgrName = (id) => { const m = state.model.managers.find((x) => x.id === id); return m ? m.name : `#${id}`; };
+  const searching = F.floor !== null;
+  grid.classList.toggle('searching', searching);
+
+  const hits = []; // {project, managers[]}
+
+  let html = '<thead><tr>';
+  html += `<th class="corner"><span class="lbl">პროექტი</span><span class="sub">${visProjects.length} პროექტი · ${visManagers.length} მენეჯერი</span></th>`;
+  for (const mg of visManagers) {
+    html += `<th data-col="${mg.id}"><div class="mgr">
+      <span class="name">${escapeHtml(mg.name)}</span>
+      <span class="email">${escapeHtml(mg.email)}</span>
+      <span class="phone">${escapeHtml(mg.phone)}</span>
+      <span class="inner ${mg.inner ? '' : 'none'}">${mg.inner ? 'შიდა ' + escapeHtml(mg.inner) : '—'}</span>
+    </div></th>`;
+  }
+  html += '</tr></thead><tbody>';
+
+  const totals = new Map(visManagers.map((m) => [m.id, { floors: 0, projects: 0 }]));
+
+  if (!visProjects.length || !visManagers.length) {
+    html += `<tr><td colspan="${visManagers.length + 1}"><div class="empty-state">ფილტრს არაფერი შეესაბამება</div></td></tr>`;
+  }
+
+  for (const p of visProjects) {
+    let rowHits = [];
+    let rowHtml = '';
+    for (const mg of visManagers) {
+      const c = cellData(p.id, mg.id);
+      if (!c) { rowHtml += `<td data-col="${mg.id}"><div class="cell"></div></td>`; continue; }
+      const t = totals.get(mg.id); t.floors += c.count; t.projects++;
+      const hit = searching && c.floors.includes(F.floor);
+      if (hit) rowHits.push(mg.name);
+      const cls = ['cell', 'filled', c.conflicts.length ? 'conflict' : '', hit ? 'hit' : ''].filter(Boolean).join(' ');
+      let title = `${p.name}\n${mg.name}\nსართულები: ${c.text} (${c.count})`;
+      if (c.conflicts.length) {
+        title += '\n\n⚠ კონფლიქტი:';
+        for (const cf of c.conflicts.slice(0, 12)) title += `\n  სართ. ${cf.floor} — ასევე: ${cf.others.map(mgrName).join(', ')}`;
+        if (c.conflicts.length > 12) title += `\n  … და კიდევ ${c.conflicts.length - 12}`;
+      }
+      rowHtml += `<td data-col="${mg.id}"><div class="${cls}" title="${escapeHtml(title)}">
+        ${c.conflicts.length ? '<span class="warn" aria-label="კონფლიქტი">!</span>' : ''}
+        <span class="rng">${escapeHtml(c.text)}</span>
+        <span class="cnt">${c.count} სართ.</span>
+      </div></td>`;
+    }
+    if (searching && rowHits.length) hits.push({ project: p.name, managers: rowHits });
+    const projTitle = p.hasConflict ? ' title="ამ პროექტში სართულების გადაფარვაა"' : '';
+    html += `<tr><td class="proj ${searching && !rowHits.length ? 'nohit' : ''}"${projTitle}>${escapeHtml(p.name)}${p.hasConflict ? '<span class="dot"></span>' : ''}</td>${rowHtml}</tr>`;
+  }
+  html += '</tbody>';
+
+  if (visProjects.length && visManagers.length) {
+    html += '<tfoot><tr><th class="corner">სულ სართული<span class="sm">ხილულ პროექტებზე</span></th>';
+    for (const mg of visManagers) {
+      const t = totals.get(mg.id);
+      html += `<th data-col="${mg.id}">${t.floors}<span class="sm">${t.projects} პროექტი</span></th>`;
+    }
+    html += '</tr></tfoot>';
+  }
+
+  grid.innerHTML = html;
+  renderAnswer(hits, visProjects.length);
+  updateButtons();
+}
+
+function renderAnswer(hits, visibleProjects) {
+  const box = $('#answer');
+  const F = state.filters;
+  if (F.floor === null) { box.hidden = true; return; }
+  box.hidden = false;
+  if (!hits.length) {
+    box.innerHTML = `<span>სართული <b>${F.floor}</b>: <span class="none">არჩეულ პროექტებში პასუხისმგებელი არ მოიძებნა</span></span>`;
+    return;
+  }
+  if (hits.length > 10) {
+    box.innerHTML = `<span>სართული <b>${F.floor}</b> ნაპოვნია <b>${hits.length}</b> პროექტში (${visibleProjects}-დან). შეავიწროვეთ პროექტების ფილტრი ან იხილეთ მონიშნული უჯრები ცხრილში.</span>`;
+    return;
+  }
+  box.innerHTML = `<span>სართული <b>${F.floor}</b> →</span>` + hits.map((h) =>
+    `<span class="pill">${escapeHtml(h.project)}: <span class="who">${escapeHtml(h.managers.join(', '))}</span></span>`).join('');
+}
+
+function updateButtons() {
+  const F = state.filters;
+  const any = F.projects.size || F.managers.size || F.floor !== null;
+  $('#btnClear').classList.toggle('active-filter', !!any);
+  $('#btnExcel').disabled = !state.model;
+  $('#floorClear').hidden = F.floor === null;
+}
+
+function renderMeta() {
+  const m = state.model;
+  const t = state.loadedAt ? state.loadedAt.toLocaleTimeString('ka-GE', { hour: '2-digit', minute: '2-digit', hour12: false }) : '';
+  $('#meta').innerHTML = `<b>${m.projects.length}</b> პროექტი · <b>${m.managers.length}</b> მენეჯერი · <b>${m.counts.used}</b> ჩანაწერი · განახლდა ${t}`;
+}
+
+/* ===================== Multi-select ===================== */
+function createMultiSelect({ mount, label, allLabel, getItems, selected, onChange, alignRight }) {
+  const root = document.getElementById(mount);
+  root.innerHTML = `
+    <button class="btn" type="button" aria-haspopup="listbox" aria-expanded="false">
+      <span class="txt"></span>
+      <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+    </button>
+    <div class="ms-panel ${alignRight ? 'right' : ''}" hidden>
+      <div class="ms-head"><input type="search" placeholder="ძებნა…" autocomplete="off"></div>
+      <div class="ms-actions">
+        <button class="btn" type="button" data-act="all">ყველას მონიშვნა</button>
+        <button class="btn" type="button" data-act="none">გასუფთავება</button>
+        <button class="btn primary" type="button" data-act="close" style="margin-left:auto">დახურვა</button>
+      </div>
+      <div class="ms-list" role="listbox"></div>
+    </div>`;
+  const btn = root.querySelector('button');
+  const txt = root.querySelector('.txt');
+  const panel = root.querySelector('.ms-panel');
+  const search = root.querySelector('input');
+  const list = root.querySelector('.ms-list');
+  let items = [];
+
+  function refreshLabel() {
+    items = getItems();
+    const total = items.length;
+    const n = [...selected].filter((id) => items.some((it) => it.id === id)).length;
+    if (!n || n === total) {
+      txt.textContent = allLabel;
+      btn.classList.remove('active-filter');
+    } else {
+      txt.innerHTML = `${escapeHtml(label)} <span class="count">${n}</span>`;
+      btn.classList.add('active-filter');
+    }
+  }
+  function renderList() {
+    const q = search.value.trim().toLowerCase();
+    const vis = items.filter((it) => !q || it.label.toLowerCase().includes(q) || (it.sub || '').toLowerCase().includes(q));
+    if (!vis.length) { list.innerHTML = '<div class="ms-empty">არაფერი მოიძებნა</div>'; return; }
+    list.innerHTML = vis.map((it) => `
+      <label class="ms-item">
+        <input type="checkbox" value="${escapeHtml(it.id)}" ${selected.has(it.id) ? 'checked' : ''}>
+        <span>${escapeHtml(it.label)}</span>
+        ${it.sub ? `<span class="sub">${escapeHtml(it.sub)}</span>` : ''}
+      </label>`).join('');
+  }
+  function open() {
+    refreshLabel(); renderList();
+    panel.hidden = false; btn.setAttribute('aria-expanded', 'true');
+    search.value = ''; renderList();
+    setTimeout(() => search.focus(), 0);
+  }
+  function close() { panel.hidden = true; btn.setAttribute('aria-expanded', 'false'); }
+  function changed() { refreshLabel(); onChange(); }
+
+  btn.addEventListener('click', () => (panel.hidden ? open() : close()));
+  search.addEventListener('input', renderList);
+  list.addEventListener('change', (e) => {
+    const cb = e.target;
+    if (cb.type !== 'checkbox') return;
+    if (cb.checked) selected.add(cb.value); else selected.delete(cb.value);
+    changed();
+  });
+  panel.querySelector('[data-act=all]').addEventListener('click', () => {
+    const q = search.value.trim().toLowerCase();
+    for (const it of items) if (!q || it.label.toLowerCase().includes(q)) selected.add(it.id);
+    renderList(); changed();
+  });
+  panel.querySelector('[data-act=none]').addEventListener('click', () => { selected.clear(); renderList(); changed(); });
+  panel.querySelector('[data-act=close]').addEventListener('click', close);
+  document.addEventListener('click', (e) => { if (!root.contains(e.target)) close(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
+
+  return { refresh: refreshLabel, close };
+}
+
+/* ===================== Excel ===================== */
+function exportExcel() {
+  if (!state.model || typeof XLSX === 'undefined') {
+    alert('Excel ბიბლიოთეკა არ ჩაიტვირთა. შეამოწმეთ ინტერნეტ-კავშირი და სცადეთ თავიდან.');
+    return;
+  }
+  const { visProjects, visManagers } = currentView();
+  const aoa = [];
+  aoa.push(['პროექტი', ...visManagers.map((m) => m.name)]);
+  aoa.push(['Email', ...visManagers.map((m) => m.email)]);
+  aoa.push(['ნომერი', ...visManagers.map((m) => m.phone)]);
+  aoa.push(['შიდა ნომერი', ...visManagers.map((m) => m.inner)]);
+  const totals = new Map(visManagers.map((m) => [m.id, 0]));
+  for (const p of visProjects) {
+    const row = [p.name];
+    for (const mg of visManagers) {
+      const c = cellData(p.id, mg.id);
+      row.push(c ? c.text + (c.conflicts.length ? ' ⚠' : '') : '');
+      if (c) totals.set(mg.id, totals.get(mg.id) + c.count);
+    }
+    aoa.push(row);
+  }
+  aoa.push(['სულ სართული', ...visManagers.map((m) => totals.get(m.id))]);
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = [{ wch: 30 }, ...visManagers.map(() => ({ wch: 24 }))];
+  ws['!freeze'] = { xSplit: 1, ySplit: 4 };
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'სართულები');
+  const d = new Date();
+  const stamp = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  XLSX.writeFile(wb, `floors-report-${stamp}.xlsx`);
+}
+
+/* ===================== ჩატვირთვა ===================== */
+function setStatus(kind, html) {
+  const el = $('#status');
+  if (!kind) { el.hidden = true; return; }
+  el.hidden = false;
+  el.className = `status ${kind}`;
+  el.innerHTML = kind === 'loading' ? `<div class="spinner"></div><span>${html}</span>` : html;
+}
+
+async function loadData() {
+  setStatus('loading', 'მონაცემები იტვირთება Bitrix24-იდან…');
+  $('#legend').hidden = true;
+  $('#btnRefresh').disabled = true;
+  try {
+    if (!CONFIG.webhook) {
+      throw new Error('config.js არ მოიძებნა ან webhook ცარიელია. დააკოპირეთ config.example.js → config.js და ჩაწერეთ Bitrix24 webhook URL.');
+    }
+    const [elements, fields] = await Promise.all([fetchAllElements(), fetchFields()]);
+    const ids = [...new Set(elements.map((el) => String(propFirst(el, P.manager) || '')).filter(Boolean))];
+    const users = ids.length ? await fetchUsers(ids) : [];
+    state.model = buildModel(elements, fields, users);
+    state.loadedAt = new Date();
+    // ფილტრებიდან მოვაშოროთ ის ID-ები, რომლებიც აღარ არსებობს
+    const pids = new Set(state.model.projects.map((p) => p.id));
+    const mids = new Set(state.model.managers.map((m) => m.id));
+    for (const id of [...state.filters.projects]) if (!pids.has(id)) state.filters.projects.delete(id);
+    for (const id of [...state.filters.managers]) if (!mids.has(id)) state.filters.managers.delete(id);
+    setStatus(null);
+    $('#legend').hidden = false;
+    renderMeta();
+    msProjects.refresh(); msManagers.refresh();
+    render();
+  } catch (e) {
+    console.error(e);
+    $('#meta').textContent = 'ჩატვირთვა ვერ მოხერხდა';
+    setStatus('error', `<span>⚠ მონაცემების წამოღება ვერ მოხერხდა.<br><code>${escapeHtml(e.message)}</code></span>
+      <button class="btn" type="button" id="btnRetry" style="margin-left:auto">ხელახლა ცდა</button>`);
+    $('#btnRetry').addEventListener('click', loadData);
+  } finally {
+    $('#btnRefresh').disabled = false;
+  }
+}
+
+/* ===================== კონტროლები ===================== */
+const msProjects = createMultiSelect({
+  mount: 'msProjects',
+  label: 'პროექტები',
+  allLabel: 'ყველა პროექტი',
+  selected: state.filters.projects,
+  getItems: () => (state.model ? state.model.projects.map((p) => ({ id: p.id, label: p.name, sub: p.hasConflict ? '⚠' : '' })) : []),
+  onChange: render,
+});
+const msManagers = createMultiSelect({
+  mount: 'msManagers',
+  label: 'მენეჯერები',
+  allLabel: 'ყველა მენეჯერი',
+  selected: state.filters.managers,
+  getItems: () => (state.model ? state.model.managers.map((m) => ({ id: m.id, label: m.name, sub: m.inner ? 'შიდა ' + m.inner : '' })) : []),
+  onChange: render,
+});
+
+const floorInput = $('#floorInput');
+floorInput.addEventListener('input', () => {
+  const v = floorInput.value.trim();
+  state.filters.floor = v === '' || !Number.isFinite(Number(v)) ? null : Number(v);
+  render();
+});
+$('#floorClear').addEventListener('click', () => { floorInput.value = ''; state.filters.floor = null; render(); floorInput.focus(); });
+$('#btnClear').addEventListener('click', () => {
+  state.filters.projects.clear(); state.filters.managers.clear(); state.filters.floor = null;
+  floorInput.value = '';
+  msProjects.refresh(); msManagers.refresh();
+  render();
+});
+$('#btnExcel').addEventListener('click', exportExcel);
+$('#btnRefresh').addEventListener('click', loadData);
+
+// სვეტის მონიშვნა ჰოვერზე
+(function columnHover() {
+  const grid = $('#grid');
+  let current = null;
+  function clear() {
+    if (current === null) return;
+    grid.querySelectorAll(`[data-col="${current}"]`).forEach((el) => el.classList.remove('col-hover'));
+    current = null;
+  }
+  grid.addEventListener('mouseover', (e) => {
+    const cell = e.target.closest('td[data-col], th[data-col]');
+    const col = cell ? cell.dataset.col : null;
+    if (col === current) return;
+    clear();
+    if (col === null) return;
+    current = col;
+    grid.querySelectorAll(`[data-col="${col}"]`).forEach((el) => el.classList.add('col-hover'));
+  });
+  grid.addEventListener('mouseleave', clear);
+})();
+
+loadData();
+</script>
+</body>
+</html>

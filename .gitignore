@@ -1,0 +1,8 @@
+# Bitrix24 webhook — არასდროს დაიდოს რეპოზიტორიაში
+config.js
+
+# OS / editor / tooling
+Thumbs.db
+.DS_Store
+.vscode/
+.claude/
