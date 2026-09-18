@@ -281,6 +281,8 @@
   }
   .grid tfoot th.corner { left: 0; z-index: 30; text-align: left; padding-left: 12px; background: #eaeef5; }
   .grid tfoot th .sm { display: block; font-size: 11px; color: var(--muted); font-weight: 500; }
+  .grid tfoot th .unit { font-size: 11.5px; font-weight: 500; color: var(--muted); margin-left: 4px; }
+  .grid tfoot th .nodata { color: var(--conflict); margin-left: 2px; cursor: help; }
 
   .empty-state { padding: 40px; text-align: center; color: var(--muted); }
 
@@ -342,6 +344,7 @@
 <!-- config.js არ იდება git-ში: შეიცავს Bitrix24 webhook-ს (ლოკალური გახსნისთვის). ნიმუში: config.example.js.
      ჰოსტინგზე ის არ არსებობს და გვერდი /api/bitrix proxy-ს იყენებს. -->
 <script src="config.js" onerror="void 0"></script>
+<script src="lib/apartments.js"></script>
 <script>
 /* =====================================================================
    კონფიგურაცია — webhook და ლისტის ID მოდის config.js-იდან (window.ARCHI_CONFIG);
@@ -354,6 +357,10 @@ const IS_HOSTED = /^https?:$/.test(location.protocol);
 const CONFIG = {
   webhook: LOCAL.webhook || '',
   proxy: LOCAL.webhook ? '' : (IS_HOSTED ? (LOCAL.proxy || '/api/bitrix') : ''),
+  // ბინების ჯამი: ჰოსტინგზე /api/apartments (cache-ირებული), ლოკალურად crm scope-ის webhook. CRM-იდან მხოლოდ კითხვა.
+  crmWebhook: LOCAL.crmWebhook || '',
+  apartmentsEndpoint: LOCAL.apartmentsEndpoint || '/api/apartments',
+  apartmentsCacheMinutes: 30,
   iblockType: LOCAL.iblockType || 'lists',
   iblockId: LOCAL.iblockId || 82,
   props: {
@@ -375,6 +382,10 @@ const state = {
   model: null,
   filters: { projects: new Set(), managers: new Set(), floor: null },
   loadedAt: null,
+  elements: null,
+  apartments: null,            // { generatedAt, projects: {projectId: {floor: count}}, missing: [{id,name}] }
+  apartmentsStatus: 'idle',    // idle | loading | ready | error | unavailable
+  apartmentsError: '',
 };
 const P = CONFIG.props;
 const $ = (sel) => document.querySelector(sel);
@@ -615,7 +626,8 @@ function render() {
   }
   html += '</tr></thead><tbody>';
 
-  const totals = new Map(visManagers.map((m) => [m.id, { floors: 0, projects: 0 }]));
+  const totals = new Map(visManagers.map((m) => [m.id, { floors: 0, projects: 0, apts: 0, noData: 0 }]));
+  const aptReady = state.apartmentsStatus === 'ready';
 
   if (!visProjects.length || !visManagers.length) {
     html += `<tr><td colspan="${visManagers.length + 1}"><div class="empty-state">ფილტრს არაფერი შეესაბამება</div></td></tr>`;
@@ -628,6 +640,7 @@ function render() {
       const c = cellData(p.id, mg.id);
       if (!c) { rowHtml += `<td data-col="${mg.id}"><div class="cell"></div></td>`; continue; }
       const t = totals.get(mg.id); t.floors += c.count; t.projects++;
+      if (aptReady) { const a = apartmentCount(p.id, c.floors); if (a === null) t.noData++; else t.apts += a; }
       const hit = searching && c.floors.includes(F.floor);
       if (hit) rowHits.push(mg.name);
       const cls = ['cell', 'filled', c.conflicts.length ? 'conflict' : '', hit ? 'hit' : ''].filter(Boolean).join(' ');
@@ -650,10 +663,19 @@ function render() {
   html += '</tbody>';
 
   if (visProjects.length && visManagers.length) {
-    html += '<tfoot><tr><th class="corner">სულ სართული<span class="sm">ხილულ პროექტებზე</span></th>';
+    const st = state.apartmentsStatus;
+    const aptTitle = 'ყველა ბინა სტატუსის მიუხედავად, პარკინგის და კომერციული ფართის გარეშე. ორ მენეჯერზე გადაფარული სართულის ბინები ორივეს ჯამში შედის.';
+    html += `<tfoot><tr><th class="corner">${aptReady ? 'სულ ბინა' : 'სულ სართული'}<span class="sm">ხილულ პროექტებზე</span></th>`;
     for (const mg of visManagers) {
       const t = totals.get(mg.id);
-      html += `<th data-col="${mg.id}">${t.floors}<span class="sm">${t.projects} პროექტი</span></th>`;
+      if (aptReady) {
+        const star = t.noData ? `<span class="nodata" title="${t.noData} პროექტი კატალოგის სექციაზე მიბმული არ არის, ჯამში არ შედის">*</span>` : '';
+        html += `<th data-col="${mg.id}" title="${aptTitle}">${t.apts}<span class="unit">ბინა</span>${star}<span class="sm">${t.floors} სართ. · ${t.projects} პროექტი</span></th>`;
+      } else {
+        const note = st === 'loading' ? 'ბინები იტვირთება…' : st === 'error' ? 'ბინები: შეცდომა' : '';
+        const tt = st === 'error' ? ` title="${escapeHtml(state.apartmentsError)}"` : '';
+        html += `<th data-col="${mg.id}"${tt}>${t.floors}<span class="unit">სართ.</span><span class="sm">${t.projects} პროექტი${note ? ' · ' + note : ''}</span></th>`;
+      }
     }
     html += '</tr></tfoot>';
   }
@@ -688,10 +710,82 @@ function updateButtons() {
   $('#floorClear').hidden = F.floor === null;
 }
 
+const hhmm = (d) => d.toLocaleTimeString('ka-GE', { hour: '2-digit', minute: '2-digit', hour12: false });
+
 function renderMeta() {
   const m = state.model;
-  const t = state.loadedAt ? state.loadedAt.toLocaleTimeString('ka-GE', { hour: '2-digit', minute: '2-digit', hour12: false }) : '';
-  $('#meta').innerHTML = `<b>${m.projects.length}</b> პროექტი · <b>${m.managers.length}</b> მენეჯერი · <b>${m.counts.used}</b> ჩანაწერი · განახლდა ${t}`;
+  if (!m) return;
+  const t = state.loadedAt ? hhmm(state.loadedAt) : '';
+  let apt = '';
+  if (state.apartmentsStatus === 'ready' && state.apartments && state.apartments.generatedAt) {
+    apt = ` · ბინები ${hhmm(new Date(state.apartments.generatedAt))}`;
+  }
+  $('#meta').innerHTML = `<b>${m.projects.length}</b> პროექტი · <b>${m.managers.length}</b> მენეჯერი · <b>${m.counts.used}</b> ჩანაწერი · განახლდა ${t}${apt}`;
+}
+
+/* ===================== ბინების ჯამი (CRM კატალოგი, მხოლოდ კითხვა) ===================== */
+/** ბინების რაოდენობა პროექტის მოცემულ სართულებზე; null = პროექტი კატალოგის სექციაზე მიბმული არ არის */
+function apartmentCount(projectId, floors) {
+  const a = state.apartments;
+  if (!a) return null;
+  const byFloor = a.projects[projectId];
+  if (!byFloor) return (a.missing || []).some((x) => x.id === projectId) ? null : 0;
+  let n = 0;
+  for (const fl of floors) n += byFloor[fl] || 0;
+  return n;
+}
+
+const APT_CACHE_KEY = 'archi.apartments.v1';
+function readApartmentsCache() {
+  try {
+    const c = JSON.parse(localStorage.getItem(APT_CACHE_KEY) || 'null');
+    if (c && c.generatedAt && Date.now() - new Date(c.generatedAt).getTime() < CONFIG.apartmentsCacheMinutes * 60000) return c;
+  } catch (e) { /* storage blocked */ }
+  return null;
+}
+function writeApartmentsCache(data) { try { localStorage.setItem(APT_CACHE_KEY, JSON.stringify(data)); } catch (e) { /* ignore */ } }
+
+function directCaller(base) {
+  return async (method, params) => {
+    const res = await fetch(base + method + '.json', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(params || {}) });
+    if (!res.ok) throw new Error(`HTTP ${res.status} (${method})`);
+    const json = await res.json();
+    if (json.error) throw new Error(`${json.error}: ${json.error_description || ''} (${method})`);
+    return json;
+  };
+}
+
+let apartmentsRun = 0;
+async function loadApartmentsData(force) {
+  const run = ++apartmentsRun;
+  const hosted = !!CONFIG.proxy;
+  if (!hosted && !(CONFIG.crmWebhook && window.ArchiApartments)) { state.apartmentsStatus = 'unavailable'; return; }
+  if (!state.apartments) { state.apartmentsStatus = 'loading'; render(); }
+  try {
+    let data;
+    if (hosted) {
+      const res = await fetch(CONFIG.apartmentsEndpoint, { headers: { Accept: 'application/json' } });
+      data = await res.json().catch(() => null);
+      if (!res.ok || !data || data.error) throw new Error((data && (data.error_description || data.error)) || `HTTP ${res.status}`);
+    } else {
+      data = (!force && readApartmentsCache()) || null;
+      if (!data) {
+        data = await window.ArchiApartments.loadApartments({
+          callLists: directCaller(CONFIG.webhook), callCrm: directCaller(CONFIG.crmWebhook), elements: state.elements,
+          options: { iblockType: CONFIG.iblockType, floorsIblockId: CONFIG.iblockId },
+        });
+        writeApartmentsCache(data);
+      }
+    }
+    if (run !== apartmentsRun) return;
+    state.apartments = data; state.apartmentsStatus = 'ready'; state.apartmentsError = '';
+  } catch (e) {
+    if (run !== apartmentsRun) return;
+    console.error(e);
+    state.apartmentsStatus = state.apartments ? 'ready' : 'error';
+    state.apartmentsError = e.message || String(e);
+  }
+  renderMeta(); render();
 }
 
 /* ===================== Multi-select ===================== */
@@ -785,15 +879,19 @@ function exportExcel() {
   aoa.push(['ნომერი', ...visManagers.map((m) => m.phone)]);
   aoa.push(['შიდა ნომერი', ...visManagers.map((m) => m.inner)]);
   const totals = new Map(visManagers.map((m) => [m.id, 0]));
+  const aptReady = state.apartmentsStatus === 'ready';
+  const aptTotals = new Map(visManagers.map((m) => [m.id, 0]));
   for (const p of visProjects) {
     const row = [p.name];
     for (const mg of visManagers) {
       const c = cellData(p.id, mg.id);
       row.push(c ? c.text + (c.conflicts.length ? ' ⚠' : '') : '');
       if (c) totals.set(mg.id, totals.get(mg.id) + c.count);
+      if (c && aptReady) aptTotals.set(mg.id, aptTotals.get(mg.id) + (apartmentCount(p.id, c.floors) || 0));
     }
     aoa.push(row);
   }
+  if (aptReady) aoa.push(['სულ ბინა', ...visManagers.map((m) => aptTotals.get(m.id))]);
   aoa.push(['სულ სართული', ...visManagers.map((m) => totals.get(m.id))]);
 
   const ws = XLSX.utils.aoa_to_sheet(aoa);
@@ -815,7 +913,7 @@ function setStatus(kind, html) {
   el.innerHTML = kind === 'loading' ? `<div class="spinner"></div><span>${html}</span>` : html;
 }
 
-async function loadData() {
+async function loadData(force) {
   setStatus('loading', 'მონაცემები იტვირთება Bitrix24-იდან…');
   $('#legend').hidden = true;
   $('#btnRefresh').disabled = true;
@@ -827,6 +925,7 @@ async function loadData() {
     const ids = [...new Set(elements.map((el) => String(propFirst(el, P.manager) || '')).filter(Boolean))];
     const users = ids.length ? await fetchUsers(ids) : [];
     state.model = buildModel(elements, fields, users);
+    state.elements = elements;
     state.loadedAt = new Date();
     // ფილტრებიდან მოვაშოროთ ის ID-ები, რომლებიც აღარ არსებობს
     const pids = new Set(state.model.projects.map((p) => p.id));
@@ -838,12 +937,13 @@ async function loadData() {
     renderMeta();
     msProjects.refresh(); msManagers.refresh();
     render();
+    loadApartmentsData(force === true); // ფონში, ცხრილს არ ბლოკავს
   } catch (e) {
     console.error(e);
     $('#meta').textContent = 'ჩატვირთვა ვერ მოხერხდა';
     setStatus('error', `<span>⚠ მონაცემების წამოღება ვერ მოხერხდა.<br><code>${escapeHtml(e.message)}</code></span>
       <button class="btn" type="button" id="btnRetry" style="margin-left:auto">ხელახლა ცდა</button>`);
-    $('#btnRetry').addEventListener('click', loadData);
+    $('#btnRetry').addEventListener('click', () => loadData(true));
   } finally {
     $('#btnRefresh').disabled = false;
   }
@@ -881,7 +981,7 @@ $('#btnClear').addEventListener('click', () => {
   render();
 });
 $('#btnExcel').addEventListener('click', exportExcel);
-$('#btnRefresh').addEventListener('click', loadData);
+$('#btnRefresh').addEventListener('click', () => loadData(true));
 
 // სვეტის მონიშვნა ჰოვერზე
 (function columnHover() {
