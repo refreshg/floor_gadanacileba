@@ -31,7 +31,7 @@ From `lists.field.get` (2026-09-09). Values arrive as `{ "<valueId>": "<value>" 
 | `SECTION_ID` | Section | integer | project key (via list 111 `PROPERTY_1041`) |
 | `PROPERTY_376` | სართული | N | floor (`Math.trunc(Number)`) |
 | `PROPERTY_383` | ფართის ტიპი | S | unit type; only `ბინა` counted (`პარკინგი` etc. excluded). Server-side filter |
-| `PROPERTY_427` | პროექტი | S | project name; per section only the dominant value is counted (misfiled units skipped: 141 on 2026-09-18) |
+| `PROPERTY_427` | პროექტი | S | project name; a unit is skipped only if this is **non-empty** and differs from the section's dominant non-empty name (2 misfiled units on 2026-09-18). Empty is counted: 139 flats of არქი ახმეტელი C have no name |
 | `PROPERTY_429` | სტატუსი | L | NOT used — all statuses counted (user decision) |
 
 ### Source: `user.get`
@@ -172,4 +172,5 @@ Retry: manual only («ხელახლა ცდა»). No backoff on `QUERY_L
 | AC-13 | `lib/apartments.js`, `api/apartments.js`, `apartmentCount`, `loadApartmentsData`, footer in `render()`, `exportExcel` | headless local + hosted dev-server, 17/17 managers match independent calc (2026-09-18) |
 
 ## Drift log
+- 2026-09-18 (fix): first version skipped units with an EMPTY `PROPERTY_427`, dropping 139 of 329 flats of არქი ახმეტელი C. Found by cross-checking against list 128. Rule corrected in `aggregateProducts`.
 - 2026-09-18: footer main figure changed from floor total (AC-7) to apartment total (AC-13) per user request; floor total stays as secondary line and as fallback.

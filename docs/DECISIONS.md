@@ -81,6 +81,7 @@
 
 ### D-12: What counts as an apartment
 - Date: 2026-09-18 (user: all statuses, footer only)
-- Decision: product with `PROPERTY_383` = `ბინა`, any `PROPERTY_429` status, floor from `PROPERTY_376`; per catalog section only units whose `PROPERTY_427` equals the section's dominant project name (141 misfiled units skipped on 2026-09-18, e.g. "არქი გლდანი 4" units inside the ახმეტელი A section). A floor assigned to two managers counts for both.
+- Decision: product with `PROPERTY_383` = `ბინა`, any `PROPERTY_429` status, floor from `PROPERTY_376`; section membership decides: all 38 project sections are direct children of the top-level catalog section «ბინები» (#102). A unit is skipped only if its `PROPERTY_427` is non-empty and differs from the section's dominant name (2 units on 2026-09-18: "არქი გლდანი 4" inside the ახმეტელი A section). Amended 2026-09-18: empty names are counted (the first version wrongly dropped 139 flats of ახმეტელი C). A floor assigned to two managers counts for both.
 - Alternatives rejected: `PROPERTY_450` «ტიპი» (null on some flats); matching project by name instead of section (names differ between list 111 and catalog).
-- Consequences: sum over managers (11,839) ≠ total flats (12,245): unassigned floors are not counted and shared floors are counted twice. Projects without `PROPERTY_1041` are excluded and flagged with `*`.
+- Verification: flat counts by status match the portal's own list 128 "products GBE" exactly for 20 of 26 comparable projects; the 6 differences are status drift in list 128 snapshots (e.g. იასამნები C lists 518 for sale while 272 are already sold), not type or section differences.
+- Consequences: sum over managers ≠ total flats (12,384 after the fix): unassigned floors are not counted and shared floors are counted twice. Projects without `PROPERTY_1041` are excluded and flagged with `*`.
