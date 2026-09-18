@@ -1,4 +1,4 @@
-<!-- last-synced: 2026-09-09, commit: 0ec4ae5 -->
+<!-- last-synced: 2026-09-18, commit: 23c847d+apartments -->
 # Decisions (ADR)
 
 ### D-1: Custom single-page matrix report instead of standard Bitrix24 list views/exports
@@ -63,3 +63,24 @@
 - Decision: Add `package.json` with no runtime dependencies; tests with built-in `node:test`; commit messages follow Conventional Commits. Runtime stays zero-build (D-6 unchanged).
 - Alternatives rejected: Jest/Vitest (extra deps); keep zero tooling.
 - Consequences: Pure functions must be extracted to a file loadable by both Node and the browser (PLAN M3).
+
+### D-10: Apartment totals from CRM product catalog; extend existing webhook scope
+- Date: 2026-09-18 (user answers 2026-09-15 and 2026-09-18)
+- Status: **implemented 2026-09-18**. Deviation from the decision below: instead of extending the user-1 lists webhook, the user created separate webhooks with `crm` scope and explicitly instructed to read products through them ("მხოლოდ წაკითხვა"). The general proxy whitelist was therefore NOT extended; a dedicated input-less endpoint is used (D-11).
+- Context: User wants the per-manager footer to show apartment count instead of floor count. List 82 has no unit data. Checked within `lists` scope: list 187 (1 record), list 140 (floor layouts, files only), list 128 "products GBE" (per-project totals by sale status, **not per floor**). Per-floor counts exist only in the CRM product catalog; list 111 links each project to a catalog section (`PROPERTY_1041` sectionID). List 159 reports ~70,082 units portal-wide.
+- Decision: Read apartments from the CRM catalog. User will add `crm` (+`catalog` if available) scope to the existing user-1 webhook; URL unchanged. Proxy whitelist gets exactly one additional read-only product-list method, restricted server-side to the sections of projects present in list 82. Count all apartments regardless of sale status; show only in the manager column footer.
+- Alternatives rejected: list 128 totals (no floor dimension → cannot split a project between managers); new limited-rights webhook (user chose to extend the current one); counting in cells too (user: footer only).
+- Consequences: D-7 risk grows (admin webhook now also reads CRM catalog). Live per-open loading of the catalog is too slow at this size → needs aggregated + cached endpoint (design in PLAN M5). Standard-first: no standard Bitrix report joins list 82 floors with catalog units.
+
+### D-11: Aggregated, CDN-cached apartments endpoint + shared UMD library; parallel ID-chained reads
+- Date: 2026-09-18
+- Context: 12,245 flats must be read to count per floor. Measured: offset paging with filters 113 s; single ID-chained batch stream ≈ 80 s (~0.3 s per page server-side); 8 parallel chains ≈ 11 s. Too slow per page open either way; ~20 viewers.
+- Decision: `lib/apartments.js` (UMD, no deps) does the read + aggregation and is used by both `api/apartments.js` and the browser (local mode). Hosted: `GET /api/apartments`, no client input, `s-maxage=1800, stale-while-revalidate=86400`, `maxDuration` 60 s. Local: direct calls, `localStorage` cache 30 min. Page renders floors first, apartments fill in asynchronously and fall back to floor totals on failure.
+- Alternatives rejected: whitelisting `crm.product.list` in the generic proxy (open endpoint would expose prices/buyers of 65k products); per-(project,floor) count queries (~800 commands, slower); list 128 totals (no floors).
+- Consequences: apartment figures can be up to ~30 min old (timestamp shown in header as «ბინები HH:MM»); 8 concurrent batch requests hit the portal roughly twice an hour at most; two webhooks to manage.
+
+### D-12: What counts as an apartment
+- Date: 2026-09-18 (user: all statuses, footer only)
+- Decision: product with `PROPERTY_383` = `ბინა`, any `PROPERTY_429` status, floor from `PROPERTY_376`; per catalog section only units whose `PROPERTY_427` equals the section's dominant project name (141 misfiled units skipped on 2026-09-18, e.g. "არქი გლდანი 4" units inside the ახმეტელი A section). A floor assigned to two managers counts for both.
+- Alternatives rejected: `PROPERTY_450` «ტიპი» (null on some flats); matching project by name instead of section (names differ between list 111 and catalog).
+- Consequences: sum over managers (11,839) ≠ total flats (12,245): unassigned floors are not counted and shared floors are counted twice. Projects without `PROPERTY_1041` are excluded and flagged with `*`.

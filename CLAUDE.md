@@ -1,10 +1,11 @@
-<!-- last-synced: 2026-09-09, commit: 0ec4ae5 -->
+<!-- last-synced: 2026-09-18, commit: 23c847d+apartments -->
 # archi_gadanacileba_floor — floor responsibility report
 
 ## Stack
 - Bitrix24 **self-hosted** (crm.archi.ge, "Bitrix Site Manager"), REST via **inbound webhook** (user ID 1). Methods: `lists.element.get`, `lists.field.get`, `user.get`. No Business Processes, no PHP.
 - Frontend: single `index.html`, vanilla JS (ES2020), no build step. CDN: SheetJS `xlsx` 0.18.5 (cdnjs), Noto Sans Georgian (Google Fonts).
-- Hosting: Vercel Hobby, Node serverless function `api/bitrix.js` (CommonJS). Prod URL: https://floor-gadanacileba.vercel.app
+- Hosting: Vercel Hobby, Node serverless functions `api/bitrix.js`, `api/apartments.js` (CommonJS). Prod URL: https://floor-gadanacileba.vercel.app
+- Second webhook with `crm` scope for apartments (`crm.product.list` only).
 - Local: Node v24 available; page opens from `file://` with `config.js`.
 - Repo: GitHub `refreshg/floor_gadanacileba` (**public**), branch `main`.
 
@@ -22,6 +23,7 @@ No test runner, no linter, no `package.json` yet — approved to add (`node:test
 ## Layout
 - `index.html` — whole app (CSS + JS). `CONFIG` object at top of `<script>`.
 - `api/bitrix.js` — Vercel proxy; reads `BITRIX_WEBHOOK`, `BITRIX_IBLOCK_ID`, `BITRIX_IBLOCK_TYPE`.
+- `lib/apartments.js` (UMD, browser + Node) and `api/apartments.js` — flats per project per floor from the CRM catalog; env `BITRIX_CRM_WEBHOOK`; `vercel.json` sets `maxDuration`.
 - `config.js` (gitignored) / `config.example.js` — local webhook config (`window.ARCHI_CONFIG`).
 - `docs/` — PRD, SPEC, PLAN, ARCHITECTURE, DECISIONS. `README.md` — user/ops guide (Georgian).
 
@@ -39,6 +41,8 @@ No test runner, no linter, no `package.json` yet — approved to add (`node:test
 - Bitrix REST: paginate with `start`/`next` (50 per page); use `batch` for >50 calls; on `QUERY_LIMIT_EXCEEDED` back off and retry.
 - `PROPERTY_1033` (floors sorted) is the floor source of truth; `PROPERTY_431/432` + odd/even only as fallback.
 - Report is **read-only**: NEVER write to list 82 from this app.
+- **CRM is READ-ONLY** (user instruction 2026-09-18): the only CRM command allowed is `crm.product.list` (plus `crm.product.fields`/`scope` for investigation). NEVER add/update/delete anything in CRM; NEVER whitelist CRM methods in `api/bitrix.js`; `/api/apartments` MUST take no client input.
+- Catalog reads: ID paging with `start=-1` in chained `batch`, stop at first short page; keep parallelism ≤ 8.
 - Verify with the headless render check (counts + known cells) before pushing.
 
 ## Workflow

@@ -1,4 +1,4 @@
-<!-- last-synced: 2026-09-09, commit: 0ec4ae5 -->
+<!-- last-synced: 2026-09-18, commit: 23c847d+apartments -->
 # Architecture — floor responsibility report
 
 ## Components
@@ -7,6 +7,8 @@
 | Report page | `index.html` | fetch, model, render, filters, Excel export, error UI |
 | Local config | `config.js` (gitignored), template `config.example.js` | `window.ARCHI_CONFIG` = webhook, iblock id/type; only for `file://` / dev |
 | Vercel proxy | `api/bitrix.js` | forwards whitelisted REST methods to Bitrix using `BITRIX_WEBHOOK` env; forces list id |
+| Apartments library | `lib/apartments.js` (UMD) | list 82 → list 111 sections → parallel chained `crm.product.list` reads → flats per project per floor. READ-ONLY. Shared by browser and Vercel fn |
+| Apartments endpoint | `api/apartments.js`, `vercel.json` | GET, no input; uses `BITRIX_WEBHOOK` + `BITRIX_CRM_WEBHOOK`; CDN-cached 30 min + stale-while-revalidate |
 | Bitrix24 REST | crm.archi.ge `/rest/<user>/<code>/` | source of truth: list 82, list fields, users |
 | CDN | cdnjs (SheetJS 0.18.5), Google Fonts | Excel writer, Georgian font |
 | Vercel | project `floor-gadanacileba` | static hosting of `index.html` + serverless function; auto-deploy from GitHub `main` |
@@ -18,6 +20,9 @@ flowchart LR
   U -->|https, no config.js<br/>POST /api/bitrix?method=…| P[Vercel fn<br/>api/bitrix.js]
   P -->|BITRIX_WEBHOOK env<br/>IBLOCK_ID forced| B
   B -->|JSON pages 50/req| P --> U
+  U -->|GET /api/apartments<br/>after floors render| A[Vercel fn<br/>api/apartments.js + lib]
+  A -->|BITRIX_CRM_WEBHOOK<br/>batch of crm.product.list, READ-ONLY| B
+  A -->|cached JSON: flats per project per floor| U
   U -->|xlsx| X[Excel file]
   G[GitHub main] -->|auto deploy| V[Vercel]
   V --> U
@@ -30,6 +35,7 @@ flowchart LR
 | 3 | page (memory) | `buildModel` → projects, managers, cells, owners |
 | 4 | page → DOM | `render()` on every filter change; no re-fetch |
 | 5 | page → file | `exportExcel()` from current view |
+| 6 | page → `/api/apartments` (hosted) or `ArchiApartments.loadApartments` (local) | background, after first render; footer switches from floors to flats when ready |
 
 Mode selection (`index.html` `CONFIG`): `ARCHI_CONFIG.webhook` present → direct; else if `location.protocol` is http(s) → `/api/bitrix`; else error "config.js არ მოიძებნა".
 
@@ -39,6 +45,8 @@ Mode selection (`index.html` `CONFIG`): `ARCHI_CONFIG.webhook` present → direc
 - `createMultiSelect({getItems, selected, onChange})` — reusable for further filters.
 - `cellData(pid, mid)` — single source for cell text/conflicts; used by both `render()` and `exportExcel()`.
 - `ARCHI_CONFIG.proxy` — override proxy path if hosted elsewhere than Vercel.
+- `ArchiApartments.DEFAULTS` — catalog property ids, flat type value, `parallel`, `chainLength`.
+- `ARCHI_CONFIG.crmWebhook` / `apartmentsEndpoint` — local crm webhook, hosted endpoint path.
 
 ## Not present (by design)
 - No database, no cache, no server state, no auth, no writes to Bitrix.
